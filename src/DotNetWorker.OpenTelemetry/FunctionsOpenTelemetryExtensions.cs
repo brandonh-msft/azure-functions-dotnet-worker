@@ -4,6 +4,7 @@
 namespace Microsoft.Azure.Functions.Worker
 {
     using System;
+    using System.Diagnostics;
 
     using global::Azure.Monitor.OpenTelemetry.AspNetCore;
 
@@ -12,6 +13,10 @@ namespace Microsoft.Azure.Functions.Worker
     using Microsoft.Extensions.Logging;
 
     using OpenTelemetry;
+    using OpenTelemetry.Logs;
+    using OpenTelemetry.Metrics;
+    using OpenTelemetry.Resources;
+    using OpenTelemetry.Trace;
 
     public static class FunctionsOpenTelemetryExtensions
     {
@@ -30,12 +35,27 @@ namespace Microsoft.Azure.Functions.Worker
 
             if (bool.TryParse(Environment.GetEnvironmentVariable("OTEL_SDK_DISABLED") ?? bool.TrueString, out var b) && !b)
             {
-                var otBuilder = services.AddOpenTelemetry().UseAzureMonitor();
-
-                // Lets the host know that the worker is sending logs to App Insights. The host will now ignore these.
-                services.Configure<WorkerOptions>(workerOptions => workerOptions.Capabilities["WorkerApplicationInsightsLoggingEnabled"] = bool.TrueString);
-
-                return otBuilder;
+                return services.AddLogging(b => b.AddOpenTelemetry(o => o.AddOtlpExporter()))
+                    // Lets the host know that the worker is sending logs to App Insights. The host will now ignore these.
+                    .Configure<WorkerOptions>(workerOptions => workerOptions.Capabilities["WorkerApplicationInsightsLoggingEnabled"] = bool.TrueString)
+                    .AddOpenTelemetry()
+                    .ConfigureResource(r =>
+                    {
+                        var envVars = Environment.GetEnvironmentVariables();
+                        // Set the AI SDK to a key so we know all the telemetry came from the Functions Host
+                        // NOTE: This ties to \azure-sdk-for-net\sdk\monitor\Azure.Monitor.OpenTelemetry.Exporter\src\Internals\ResourceExtensions.cs :: AiSdkPrefixKey used in CreateAzureMonitorResource()
+                        var version = typeof(WorkerOptions).Assembly.GetName().Version!.ToString();
+                        r.AddService("azureFunctions", serviceVersion: version);
+                        r.AddAttributes([
+                            new("ai.sdk.prefix", $@"azurefunctionscoretools: {version} "),
+                            new("azurefunctionscoretools_version", version),
+                            //new("RoleInstanceId", hostOptions?.CurrentValue.InstanceId ?? string.Empty),
+                            new("ProcessId", Process.GetCurrentProcess().Id)
+                        ]);
+                    })
+                    .WithTracing(o => o.AddOtlpExporter())
+                    .WithMetrics(o => o.AddOtlpExporter())
+                    .UseAzureMonitor();
             }
 
             return default;
