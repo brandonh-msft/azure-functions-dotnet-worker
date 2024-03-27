@@ -4,13 +4,13 @@
 namespace Microsoft.Azure.Functions.Worker.OpenTelemetry
 {
     using System;
-    using System.Diagnostics;
 
-    using global::Azure.Monitor.OpenTelemetry.AspNetCore;
+    using global::Azure.Core;
+    using global::Azure.Monitor.OpenTelemetry.Exporter;
+    using global::Azure.Monitor.OpenTelemetry.LiveMetrics;
     using global::OpenTelemetry;
     using global::OpenTelemetry.Logs;
     using global::OpenTelemetry.Metrics;
-    using global::OpenTelemetry.Resources;
     using global::OpenTelemetry.Trace;
 
     using Microsoft.Extensions.DependencyInjection;
@@ -21,36 +21,33 @@ namespace Microsoft.Azure.Functions.Worker.OpenTelemetry
         /// <summary>
         /// Configures OpenTelemetry for Functions.
         /// </summary>
-        /// <param name="services">The <see cref="IServiceCollection"/> to configure.</param>
-        /// <returns>An instance of <see cref="OpenTelemetryBuilder"/> if OpenTelemetry is enabled, otherwise null.</returns>
-        public static OpenTelemetryBuilder? ConfigureFunctionsOpenTelemetry(this IServiceCollection services)
+        /// <param name="builder">The <see cref="OpenTelemetryBuilder"/> to configure.</param>
+        /// <param name="azureMonitorCredential">The <see cref="TokenCredential"/> to use for Azure Monitor if you are using Managed Identity to push telemetry.</param>
+        /// <returns>The <paramref name="builder"/> enabled for OpenTelemetry.</returns>
+        public static OpenTelemetryBuilder UseFunctionsDefaults(this OpenTelemetryBuilder builder, TokenCredential? azureMonitorCredential = null)
         {
-            if (services is null)
+            if (builder is null)
             {
-                throw new ArgumentNullException(nameof(services));
+                throw new ArgumentNullException(nameof(builder));
             }
 
-            return services.AddLogging(b => b.AddOpenTelemetry(o => o.AddOtlpExporter()))
+            builder
+                .WithTracing(o => o
+                    .AddOtlpExporter()
+                    .AddAzureMonitorTraceExporter(credential: azureMonitorCredential)
+                    .AddLiveMetrics(o => o.Credential = azureMonitorCredential))
+                .WithMetrics(o => o
+                    .AddOtlpExporter()
+                    .AddAzureMonitorMetricExporter(credential: azureMonitorCredential))
+                .Services.AddLogging(b => b
+                    .AddOpenTelemetry(o => o
+                        .AddOtlpExporter()
+                        .AddAzureMonitorLogExporter(credential: azureMonitorCredential)))
+
                 // Lets the host know that the worker is sending logs to App Insights. The host will now ignore these.
-                .Configure<WorkerOptions>(workerOptions => workerOptions.Capabilities["WorkerApplicationInsightsLoggingEnabled"] = bool.TrueString)
-                .AddOpenTelemetry()
-                .ConfigureResource(r =>
-                {
-                    var envVars = Environment.GetEnvironmentVariables();
-                    // Set the AI SDK to a key so we know all the telemetry came from the Functions Host
-                    // NOTE: This ties to \azure-sdk-for-net\sdk\monitor\Azure.Monitor.OpenTelemetry.Exporter\src\Internals\ResourceExtensions.cs :: AiSdkPrefixKey used in CreateAzureMonitorResource()
-                    var version = typeof(WorkerOptions).Assembly.GetName().Version!.ToString();
-                    r.AddService("azureFunctions", serviceVersion: version);
-                    r.AddAttributes([
-                        new("ai.sdk.prefix", $@"azurefunctionscoretools: {version} "),
-                            new("azurefunctionscoretools_version", version),
-                            //new("RoleInstanceId", hostOptions?.CurrentValue.InstanceId ?? string.Empty),
-                            new("ProcessId", Process.GetCurrentProcess().Id)
-                    ]);
-                })
-                .WithTracing(o => o.AddOtlpExporter())
-                .WithMetrics(o => o.AddOtlpExporter())
-                .UseAzureMonitor();
+                .Configure<WorkerOptions>(workerOptions => workerOptions.Capabilities["WorkerApplicationInsightsLoggingEnabled"] = bool.TrueString);
+
+            return builder;
         }
     }
 }
