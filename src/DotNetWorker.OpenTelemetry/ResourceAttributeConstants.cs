@@ -1,8 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-
-namespace Microsoft.Azure.Functions.Worker.OpenTelemetry
+﻿namespace Microsoft.Azure.Functions.Worker.OpenTelemetry
 {
     internal sealed class ResourceAttributeConstants
     {
@@ -38,6 +34,6 @@ namespace Microsoft.Azure.Functions.Worker.OpenTelemetry
         internal const string AttributeCloudProvider = "cloud.provider";
         internal const string AttributeCloudPlatform = "cloud.platform";
         internal const string AttributeCloudResourceId = "cloud.resource.id";
-        
+
     }
 }

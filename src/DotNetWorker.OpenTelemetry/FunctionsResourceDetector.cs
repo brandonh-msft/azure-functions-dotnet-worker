@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
+
 using OpenTelemetry.Resources;
-using OpenTelemetry.Trace;
 
 namespace Microsoft.Azure.Functions.Worker.OpenTelemetry
 {
@@ -31,7 +31,7 @@ namespace Microsoft.Azure.Functions.Worker.OpenTelemetry
                 if (websiteSiteName != null)
                 {
                     //attributeList.Add(new KeyValuePair<string, object>(ResourceSemanticConventions.AttributeServiceName, websiteSiteName));
-                    
+
 
                     var azureResourceUri = GetAzureResourceURI(websiteSiteName);
                     if (azureResourceUri != null)
